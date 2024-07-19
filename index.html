@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Google Sheets API Login and CSV Parsing</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chart {
+            width: 100%;
+            height: 1060px;
+        }
+        .tooltip {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            position: absolute;
+            visibility: hidden;
+            background-color: white;
+            border: solid 1px black;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 400px;
+            word-wrap: normal;
+        }
+        .tile-text {
+            font-family: "Times New Roman", Times, serif; /* Change to your desired typeface */
+            font-size: 12px; /* Adjust the font size as needed */
+            fill: black; /* Adjust the text color as needed */
+            font-weight: bold;
+        }
+        .filter-container {
+            margin-bottom: 10px;
+        }
+        .filter-checkbox {
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <button id="authorize_button">Authorize</button>
+    <button id="signout_button">Sign Out</button>
+    <pre id="content" style="white-space: pre-wrap;"></pre>
+    <div class="filter-container">
+        <div id="filter-options"></div>
+    </div>
+    <div id="chart"></div>
+    <script>
+        const CLIENT_ID = '353811799349-m68gf2o2p4ht8i2g8m90h88ut7nf1fug.apps.googleusercontent.com';
+        let tokenClient;
+        let accessToken = null;
+        let parsedData = [];
+        let projectMap = {};
+
+        const authorizeButton = document.getElementById('authorize_button');
+        const signoutButton = document.getElementById('signout_button');
+
+        authorizeButton.style.display = 'block';
+        signoutButton.style.display = 'none';
+
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
+        }
+
+        async function initializeGapiClient() {
+            await gapi.client.init({
+                apiKey: 'AIzaSyD-IYzoo6G2iPWwmryVYSch4psO7jci5k8',
+                discoveryDocs: ["https://sheets.googleapis.com/$discovery/rest?version=v4"],
+            });
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+                callback: (tokenResponse) => {
+                    accessToken = tokenResponse.access_token;
+                    authorizeButton.style.display = 'none';
+                    signoutButton.style.display = 'block';
+                    listMajors();
+                },
+            });
+        }
+
+        function handleAuthClick() {
+            tokenClient.requestAccessToken();
+        }
+
+        function handleSignoutClick() {
+            accessToken = null;
+            authorizeButton.style.display = 'block';
+            signoutButton.style.display = 'none';
+            document.getElementById('content').innerText = '';
+        }
+
+        async function listMajors() {
+            if (!accessToken) return;
+
+            gapi.client.setToken({access_token: accessToken});
+            const response = await gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: '1ZzxJZ2bnXWJ3kdl_bJlvqluGG3R5rJkH0USIFs3Zn-4',
+                range: 'Sheet1!A1:K',
+            });
+
+            const range = response.result;
+            if (range.values.length > 0) {
+                parsedData = range.values.slice(1).map(row => ({
+                    roadmapVersion: row[0],
+                    projectType: row[1],
+                    projectTitle: row[2],
+                    rankOrder: row[3],
+                    pmoEpic: row[4],
+                    projectSize: +row[5],
+                    goal: row[6],
+                    projectStatus: row[7],
+                    teamsImpacted: row[8],
+                    eng: row[9],
+                    qa: row[10],
+                    pm: row[11]
+                }));
+
+                // Create a map for easy access to project details by projectTitle
+                parsedData.forEach(project => {
+                    projectMap[project.projectTitle] = project;
+                });
+
+                console.log("Parsed Data:", parsedData); // Logging the parsed data
+                console.log("Project Map:", projectMap); // Logging the project map
+
+                // Populate filter options
+                populateFilterOptions();
+
+                // Transform parsedData into a nested structure
+                const nestedData = transformData(parsedData);
+                createTreemap(nestedData);
+            } else {
+                document.getElementById('content').innerText = 'No data found.';
+            }
+        }
+
+function populateFilterOptions() {
+    const filterOptions = document.getElementById('filter-options');
+    filterOptions.innerHTML = ''; // Clear existing options
+
+    const roadmapVersions = [...new Set(parsedData.map(d => d.roadmapVersion))];
+    roadmapVersions.forEach(version => {
+        const label = document.createElement('label');
+        label.innerHTML = `<input type="checkbox" class="filter-checkbox" value="${version}"> ${version}`;
+        filterOptions.appendChild(label);
+    });
+
+    // Add event listeners for filter checkboxes
+    document.querySelectorAll('.filter-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateFilter);
+    });
+}
+
+function updateFilter() {
+    const selectedVersions = Array.from(document.querySelectorAll('.filter-checkbox:checked')).map(cb => cb.value);
+    const filteredData = parsedData.filter(d => selectedVersions.includes(d.roadmapVersion));
+    const nestedData = transformData(filteredData);
+    d3.select("#chart").selectAll("*").remove(); // Clear the existing chart
+    createTreemap(nestedData);
+}
+
+function transformData(data) {
+    return {
+        name: "root",
+        children: d3.groups(data, d => d.roadmapVersion).map(([key, values]) => ({
+            name: key,
+            children: d3.groups(values, d => d.projectType).map(([key, values]) => ({
+                name: key,
+                children: values.map(d => ({name: d.projectTitle, value: d.projectSize}))
+            }))
+        }))
+    };
+}
+
+        function createTreemap(data) {
+            const width = 960;
+            const height = 600;
+            const color = d3.scaleSequential([8, 0], d3.interpolatePlasma);
+
+            const treemap = data => d3.treemap()
+                .size([width, height])
+                .paddingOuter(3)
+                .paddingTop(19)
+                .paddingInner(1)
+                .round(true)
+                (d3.hierarchy(data)
+                    .sum(d => d.value)
+                    .sort((a, b) => b.value - a.value));
+
+            const root = treemap(data);
+
+            const svg = d3.create("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .attr("viewBox", [0, 0, width, height])
+                .attr("style", "max-width: 100%; height: auto; overflow: visible; font: 10px sans-serif;");
+
+            const uniqueId = (() => {
+                let id = 0;
+                return () => `id-${id++}`;
+            })();
+
+            const shadowId = uniqueId();
+
+            svg.append("filter")
+                .attr("id", shadowId)
+                .append("feDropShadow")
+                .attr("flood-opacity", 0.3)
+                .attr("dx", 0)
+                .attr("stdDeviation", 3);
+
+            const node = svg.selectAll("g")
+                .data(d3.group(root, d => d.height))
+                .join("g")
+                .attr("filter", `url(#${shadowId})`)
+                .selectAll("g")
+                .data(d => d[1])
+                .join("g")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            // Define color mapping based on projectStatus
+            const getColor = (status, defaultColor) => {
+                switch (status) {
+                    case 'Off-Track':
+                        return '#D8382C';
+                    case 'Completed':
+                        return '#4FAA61';
+                    default:
+                    return defaultColor;
+                    }
+            };
+                    node.append("rect")
+            .attr("id", d => (d.nodeUid = uniqueId()))
+            .attr("fill", d => {
+                const project = projectMap[d.data.name];
+                const defaultColor = color(d.height);
+                return project ? getColor(project.projectStatus, defaultColor) : defaultColor;
+            })
+            .attr("width", d => d.x1 - d.x0)
+            .attr("height", d => d.y1 - d.y0)
+            .on("mouseover", handleMouseOver)
+            .on("mouseout", handleMouseOut);
+
+        node.append("clipPath")
+            .attr("id", d => (d.clipUid = uniqueId()))
+            .append("use")
+            .attr("xlink:href", d => `#${d.nodeUid}`);
+
+        node.append("text")
+            .attr("clip-path", d => `url(#${d.clipUid})`)
+            .attr("class","tile-text")
+            .selectAll("tspan")
+            .data(d => d.data.name.split(/\+S/g))
+            .join("tspan")
+            .attr("fill-opacity", (d, i, nodes) => i === nodes.length - 1 ? 0.7 : null)
+            .text(d => d);
+
+        node.filter(d => d.children).selectAll("tspan")
+            .attr("dx", 3)
+            .attr("y", 13);
+
+        node.filter(d => !d.children).selectAll("tspan")
+            .attr("x", 3)
+            .attr("y", (d, i, nodes) => `${(i === nodes.length - 1) * 0.3 + 1.1 + i * 0.9}em`);
+
+        document.getElementById('chart').appendChild(svg.node());
+
+        // Create tooltip div
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip");
+
+        function handleMouseOver(event, d) {
+            const project = projectMap[d.data.name]; // Lookup project by name
+            if (project) {
+                tooltip.style("visibility", "visible")
+                    .style("top", (event.pageY + 10) + "px")
+                    .style("left", (event.pageX + 10) + "px")
+                    .html(`
+                        <strong>${project.pmoEpic} | ${project.projectTitle}</strong><br>
+                        Teams Involved: ${project.teamsImpacted || 'N/A'}<br>
+                        PM: ${project.pm || 'N/A'} | Eng: ${project.eng || 'N/A'} | QA: ${project.qa || 'N/A'}<br>
+                        Project Size: ${project.projectSize} | Goal: ${project.goal || 'N/A'}<br>
+                    `);
+            }
+        }
+
+        function handleMouseOut() {
+            tooltip.style("visibility", "hidden");
+        }
+    }
+
+    window.onload = function () {
+        gapiLoaded();
+        gisLoaded();
+    };
+
+    authorizeButton.onclick = handleAuthClick;
+    signoutButton.onclick = handleSignoutClick;
+</script>
+<script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+</body>
+</html>
