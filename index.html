@@ -106,29 +106,36 @@
 
             const range = response.result;
             if (range.values.length > 0) {
-                parsedData = range.values.slice(1).map(row => ({
-                    roadmapVersion: row[0],
-                    carriedOver: row[1],
-                    projectType: row[2],
-                    projectTitle: row[3],
-                    rankOrder: row[4],
-                    pmoEpic: row[5],
-                    projectSize: +row[6],
-                    goal: row[7],
-                    projectStatus: row[8],
-                    teamsImpacted: row[9],
-                    eng: row[10],
-                    qa: row[11],
-                    pm: row[12]
-                }));
+                parsedData = range.values.slice(1).map((row, index) => {
+                    // Check if the Project Title exists, skip the row if it's missing
+                    if (!row[3]) return null;
+
+                    return {
+                        uniqueKey: `project-${index}`, // Generate a unique key
+                        roadmapVersion: row[0],
+                        carriedOver: row[1],
+                        projectType: row[2],
+                        projectTitle: row[3],
+                        rankOrder: row[4],
+                        pmoEpic: row[5],
+                        projectSize: +row[6],
+                        goal: row[7],
+                        projectStatus: row[8],
+                        teamsImpacted: row[9],
+                        eng: row[10],
+                        qa: row[11],
+                        pm: row[12]
+                    };
+                }).filter(project => project !== null); // Remove any null entries from the array
 
                 // Create a map for easy access to project details by projectTitle
                 parsedData.forEach(project => {
-                    projectMap[project.projectTitle] = project;
+                    projectMap[project.uniqueKey] = project;
                 });
 
                 console.log("Parsed Data:", parsedData); // Logging the parsed data
                 console.log("Project Map:", projectMap); // Logging the project map
+                console.log(Object.keys(projectMap)); // Log all keys in projectMap
 
                 // Populate filter options
                 populateFilterOptions();
@@ -173,7 +180,17 @@ function transformData(data) {
             name: key,
             children: d3.groups(values, d => d.projectType).map(([key, values]) => ({
                 name: key,
-                children: values.map(d => ({name: d.projectTitle, value: d.projectSize}))
+                children: values.map(d => ({
+                    name: d.projectTitle,
+                    value: d.projectSize,
+                    status: d.projectStatus,
+                    pmoEpic: d.pmoEpic,
+                    teamsImpacted: d.teamsImpacted,
+                    eng: d.eng,
+                    qa: d.qa,
+                    pm: d.pm,
+                    goal: d.goal
+                }))
             }))
         }))
     };
@@ -238,12 +255,15 @@ function transformData(data) {
                     return defaultColor;
                     }
             };
-                    node.append("rect")
+
+        node.append("rect")
             .attr("id", d => (d.nodeUid = uniqueId()))
             .attr("fill", d => {
-                const project = projectMap[d.data.name];
+                console.log("Data:", d.data); // Log the data
+                const status = d.data.status; // Directly access status from d.data
                 const defaultColor = color(d.height);
-                return project ? getColor(project.projectStatus, defaultColor) : defaultColor;
+                console.log(`Status: ${status}, Color: ${defaultColor}`);
+                return status ? getColor(status, defaultColor) : defaultColor;
             })
             .attr("width", d => d.x1 - d.x0)
             .attr("height", d => d.y1 - d.y0)
@@ -278,24 +298,24 @@ function transformData(data) {
         const tooltip = d3.select("body").append("div")
             .attr("class", "tooltip");
 
-        function handleMouseOver(event, d) {
-            const project = projectMap[d.data.name]; // Lookup project by name
-            if (project) {
-                tooltip.style("visibility", "visible")
-                    .style("top", (event.pageY + 10) + "px")
-                    .style("left", (event.pageX + 10) + "px")
-                    .html(`
-                        <strong>${project.pmoEpic} | ${project.projectTitle}</strong><br>
-                        Teams Involved: ${project.teamsImpacted || 'N/A'}<br>
-                        PM: ${project.pm || 'N/A'} | Eng: ${project.eng || 'N/A'} | QA: ${project.qa || 'N/A'}<br>
-                        Project Size: ${project.projectSize} | Goal: ${project.goal || 'N/A'}<br>
-                    `);
-            }
-        }
+    function handleMouseOver(event, d) {
+    const project = d.data; // Use the data directly from d
+    if (project) {
+        tooltip.style("visibility", "visible")
+            .style("top", (event.pageY + 10) + "px")
+            .style("left", (event.pageX + 10) + "px")
+            .html(`
+                <strong>${project.pmoEpic || 'N/A'} | ${project.name}</strong><br>
+                Teams Involved: ${project.teamsImpacted || 'N/A'}<br>
+                PM: ${project.pm || 'N/A'} | Eng: ${project.eng || 'N/A'} | QA: ${project.qa || 'N/A'}<br>
+                Project Size: ${project.value || 'N/A'} | Goal: ${project.goal || 'N/A'}<br>
+            `);
+    }
+}
 
-        function handleMouseOut() {
-            tooltip.style("visibility", "hidden");
-        }
+    function handleMouseOut() {
+    tooltip.style("visibility", "hidden");
+}
     }
 
     window.onload = function () {
