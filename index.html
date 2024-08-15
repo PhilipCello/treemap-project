@@ -101,24 +101,25 @@
             gapi.client.setToken({access_token: accessToken});
             const response = await gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: '1ZzxJZ2bnXWJ3kdl_bJlvqluGG3R5rJkH0USIFs3Zn-4',
-                range: 'Sheet1!A1:K',
+                range: 'Sheet1!A1:M',
             });
 
             const range = response.result;
             if (range.values.length > 0) {
                 parsedData = range.values.slice(1).map(row => ({
                     roadmapVersion: row[0],
-                    projectType: row[1],
-                    projectTitle: row[2],
-                    rankOrder: row[3],
-                    pmoEpic: row[4],
-                    projectSize: +row[5],
-                    goal: row[6],
-                    projectStatus: row[7],
-                    teamsImpacted: row[8],
-                    eng: row[9],
-                    qa: row[10],
-                    pm: row[11]
+                    carriedOver: row[1],
+                    projectType: row[2],
+                    projectTitle: row[3],
+                    rankOrder: row[4],
+                    pmoEpic: row[5],
+                    projectSize: +row[6],
+                    goal: row[7],
+                    projectStatus: row[8],
+                    teamsImpacted: row[9],
+                    eng: row[10],
+                    qa: row[11],
+                    pm: row[12]
                 }));
 
                 // Create a map for easy access to project details by projectTitle
@@ -229,6 +230,8 @@ function transformData(data) {
                 switch (status) {
                     case 'Off-Track':
                         return '#D8382C';
+                    case 'On-Track':
+                        return '#afdab8';
                     case 'Completed':
                         return '#4FAA61';
                     default:
