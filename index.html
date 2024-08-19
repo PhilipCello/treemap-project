@@ -23,13 +23,22 @@
             padding: 10px;
             border-radius: 5px;
             max-width: 400px;
-            word-wrap: normal;
+            /*word-wrap: normal;*/
+            text-wrap: pretty;
+        }
+        .container-title {
+            font-weight: bold;
+            font-size: 14px;
+            text-anchor: start;
         }
         .tile-text {
             font-family: "Times New Roman", Times, serif; /* Change to your desired typeface */
-            font-size: 12px; /* Adjust the font size as needed */
+            font-size: 10px; /* Adjust the font size as needed */
             fill: black; /* Adjust the text color as needed */
-            font-weight: bold;
+            align-content: normal;
+            text-align: left;
+            font-weight: normal;
+            text-wrap: pretty;
         }
         .filter-container {
             margin-bottom: 10px;
@@ -275,13 +284,43 @@ function transformData(data) {
             .append("use")
             .attr("xlink:href", d => `#${d.nodeUid}`);
 
+        // node.append("text")
+        //     .attr("clip-path", d => `url(#${d.clipUid})`)
+        //     .attr("class","tile-text")
+        //     .selectAll("tspan")
+        //     .data(d => d.data.name.split(/\+S/g))
+        //     .join("tspan")
+        //     .attr("fill-opacity", (d, i, nodes) => i === nodes.length - 1 ? 0.7 : null)
+        //     .text(d => d);
+
         node.append("text")
             .attr("clip-path", d => `url(#${d.clipUid})`)
-            .attr("class","tile-text")
+            .attr("class", d => d.children ? "container-title" : "tile-text")
+            // .attr("x", 3)
+            // .attr("y", d => d.children ? 15 : 12) // Adjust the y position as before
             .selectAll("tspan")
-            .data(d => d.data.name.split(/\+S/g))
+            .data(d => {
+                const words = d.data.name.split(" ");
+                let line = [];
+                const lines = [];
+                const containerWidth = d.x1 - d.x0; // Calculate the width of the container
+                const maxLineLength = Math.floor(containerWidth / 7); // Estimate max characters per line (7 is an arbitrary value to adjust)
+
+                words.forEach(word => {
+                    if ((line.join(" ") + " " + word).length > maxLineLength) {
+                        lines.push(line.join(" "));
+                        line = [word];
+                    } else {
+                        line.push(word);
+                    }
+                });
+                lines.push(line.join(" "));
+                return lines;
+            })
             .join("tspan")
-            .attr("fill-opacity", (d, i, nodes) => i === nodes.length - 1 ? 0.7 : null)
+            // .attr("x", 3)
+            // .attr("y", (d, i) => `${1.1 + i * 1.1}em`)
+            // .attr("dy", "1em")
             .text(d => d);
 
         node.filter(d => d.children).selectAll("tspan")
